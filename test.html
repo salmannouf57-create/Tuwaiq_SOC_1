@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Visitor Counter</title>
+
+  <style>
+
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+
+    .counter { font-size: 24px; margin: 20px; }
+
+    .device { font-size: 18px; margin: 10px; }
+
+  </style>
+
+</head>
+
+<body>
+
+  <h1>Visitor Counter</h1>
+
+  <div class="counter">
+
+    Total Visitors: <span id="totalVisitors">0</span><br>
+
+    Total Hits: <span id="totalHits">0</span>
+
+  </div>
+
+  <div class="device">
+
+    Device: <span id="deviceType">Unknown</span>
+
+  </div>
+
+
+
+  <script>
+
+    // Simulated visitor and hit counts
+
+    let totalVisitors = 100; // Replace with real tracking if needed
+
+    let totalHits = 500;     // Replace with real tracking if needed
+
+
+
+    // Detect device type
+
+    const ua = navigator.userAgent;
+
+    let deviceType = /Mobi|Android/i.test(ua) ? 'Mobile' :
+
+                     /iPad|Tablet/i.test(ua) ? 'Tablet' : 'Desktop';
+
+
+
+    // Update page content
+
+    document.getElementById('totalVisitors').textContent = totalVisitors;
+
+    document.getElementById('totalHits').textContent = totalHits;
+
+    document.getElementById('deviceType').textContent = deviceType;
+
+  </script>
+
+</body>
+
+</html>
