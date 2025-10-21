@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Visitor Counter (Backend-less)</title>
+  <style>
+    :root { --bg:#fff; --fg:#111; --muted:#666; --card:#f7f7f7; --br:14px; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--fg); }
+    .wrap { max-width: 820px; margin: 40px auto; padding: 0 16px; }
+    .card { background: var(--card); border-radius: var(--br); padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    p.muted { color: var(--muted); margin: 6px 0 0; }
+    .grid { display: grid; gap: 12px; margin-top: 16px; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); }
+    .stat { background: #fff; border-radius: 12px; padding: 14px; text-align: center; border: 1px solid #eee; }
+    .stat b { display:block; font-size: 1.8rem; margin-top: 4px; }
+    .foot { margin-top: 14px; font-size: .9rem; color: var(--muted); }
+    code { background:#eee; padding:2px 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Visitor Counter</h1>
+      <p class="muted">Counts unique visitors and total hits with a device breakdown—no backend server.</p>
+
+      <div class="grid">
+        <div class="stat">Total visitors<b id="totalVisitors">—</b></div>
+        <div class="stat">Total hits<b id="totalHits">—</b></div>
+        <div class="stat">Desktop<b id="desktopCount">—</b></div>
+        <div class="stat">Mobile<b id="mobileCount">—</b></div>
+        <div class="stat">Tablet<b id="tabletCount">—</b></div>
+      </div>
+
+      <div class="foot" id="you"></div>
+    </div>
+  </div>
+
+  <!-- Supabase client (UMD build for browsers) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
+<button id="resetBtn">Reset Counter</button>
+<script>
+  document.getElementById("resetBtn").addEventListener("click", async () => {
+    localStorage.removeItem("visitorId");
+    await sb.from("visitors").delete().neq("visitor_id", "");
+    await sb.from("hits").delete().neq("device_type", "");
+    alert("Counter has been reset!");
+    location.reload(); // reload page to see 0s
+  });
+</script>
+  
+  <script>
+    /***** 1) CONFIG: fill these from your Supabase project *****/
+    // Your project URL is already known from your snippet:
+    const SUPABASE_URL = "https://psqmcpobpqnxgzgmtzhr.supabase.co";
+    // Replace with your project's ANON key (Settings → API → Project API keys → anon)
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzcW1jcG9icHFueGd6Z210emhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0MDA4OTYsImV4cCI6MjA3Mjk3Njg5Nn0.g4QIn7pm5ZXZAfcCrSjvpBoMBifTjQKH7re_PccNqhE";
+
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    /***** 2) Utilities *****/
+    function getOrCreateVisitorId() {
+      const key = "visitorId";
+      let id = localStorage.getItem(key);
+      if (!id) {
+        // RFC4122-ish UUID v4
+        id = ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+          (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+        );
+        localStorage.setItem(key, id);
+      }
+      return id;
+    }
+
+    function detectDeviceType() {
+      const uaData = navigator.userAgentData;
+      if (uaData && typeof uaData.mobile === "boolean") {
+        return uaData.mobile ? "mobile" : "desktop"; // tablet refinement below
+      }
+      const ua = navigator.userAgent || "";
+      const isTablet = /iPad|Tablet|Nexus 7|Nexus 9|SM-T|Tab|Kindle/i.test(ua);
+      const isMobile = /Mobile|iPhone|Android(?!.*Tablet)|IEMobile|Opera Mini/i.test(ua);
+      if (isTablet) return "tablet";
+      if (isMobile) return "mobile";
+      return "desktop";
+    }
+
+    async function refineTablet(deviceType) {
+      try {
+        if (navigator.userAgentData?.getHighEntropyValues) {
+          const { model } = await navigator.userAgentData.getHighEntropyValues(["model"]);
+          if (/iPad|SM-T|Tab|Tablet/i.test(model || "")) return "tablet";
+        }
+      } catch {}
+      return deviceType;
+    }
+
+    function renderTotals({ totalVisitors, totalHits, byDevice }) {
+      document.getElementById("totalVisitors").textContent = totalVisitors ?? "—";
+      document.getElementById("totalHits").textContent = totalHits ?? "—";
+      document.getElementById("desktopCount").textContent = byDevice.desktop ?? 0;
+      document.getElementById("mobileCount").textContent = byDevice.mobile ?? 0;
+      document.getElementById("tabletCount").textContent = byDevice.tablet ?? 0;
+    }
+
+    /***** 3) Main flow *****/
+    (async () => {
+      const visitorId = getOrCreateVisitorId();
+      let deviceType = detectDeviceType();
+      deviceType = await refineTablet(deviceType);
+
+      document.getElementById("you").textContent =
+        `You are ${visitorId.slice(0,8)}… on ${deviceType}.`;
+
+      // Upsert unique visitor (only first time for this browser)
+      const { error: upsertErr } = await sb
+        .from("visitors")
+        .upsert(
+          { visitor_id: visitorId, device_type: deviceType },
+          { onConflict: "visitor_id", ignoreDuplicates: true }
+        );
+      if (upsertErr) console.warn("Visitor upsert error:", upsertErr);
+
+      // Insert a hit (every page view)
+      const { error: hitErr } = await sb
+        .from("hits")
+        .insert({ device_type: deviceType });
+      if (hitErr) console.warn("Hit insert error:", hitErr);
+
+      // Fetch totals (head requests return count without data)
+      const [visitorsRes, hitsRes] = await Promise.all([
+        sb.from("visitors").select("*", { count: "exact", head: true }),
+        sb.from("hits").select("*", { count: "exact", head: true })
+      ]);
+
+      const totalVisitors = visitorsRes.count ?? 0;
+      const totalHits = hitsRes.count ?? 0;
+
+      // Device breakdown from unique visitors (client-side aggregation)
+      const { data: visitorRows, error: devErr } = await sb
+        .from("visitors")
+        .select("device_type");
+      if (devErr) console.warn("Device breakdown error:", devErr);
+
+      const byDevice = { desktop: 0, mobile: 0, tablet: 0 };
+      (visitorRows || []).forEach(r => {
+        if (byDevice[r.device_type] !== undefined) byDevice[r.device_type]++;
+      });
+
+      renderTotals({ totalVisitors, totalHits, byDevice });
+    })().catch(err => {
+      console.error(err);
+      document.getElementById("you").textContent =
+        "Failed to load stats. Check your Supabase URL and anon key.";
+    });
+  </script>
+</body>
